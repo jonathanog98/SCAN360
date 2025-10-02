@@ -3,11 +3,22 @@
 function normalizePlate(input){
   return String(input||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
 }
+function showError(msg){
+  console.error(msg);
+  const box = document.createElement('div');
+  box.style.background='#fee2e2';box.style.border='1px solid #fecaca';box.style.padding='10px';box.style.borderRadius='8px';box.style.margin='10px 0';
+  box.textContent = '⚠️ ' + msg;
+  document.body.prepend(box);
+}
 
 // === Supabase client ===
 let supabaseClient = null;
 function initSupabase(){
   if(!supabaseClient){
+    if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined'){
+      showError('No se encontró env.js (SUPABASE_URL / SUPABASE_ANON_KEY). Verifica el deploy.');
+      throw new Error('Faltan variables de entorno');
+    }
     supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
   return supabaseClient;
@@ -17,8 +28,25 @@ function initSupabase(){
 async function loadChecklist(){
   const { data, error } = await supabaseClient.from('inspection_catalog')
     .select('*').order('grp',{ascending:true,nullsFirst:true}).order('position',{ascending:true});
-  if (error) throw error;
+  if (error){ showError('Error leyendo inspection_catalog: '+error.message); throw error; }
   return (data||[]).map(r=>({ key:r.point_key, label:r.point_label, grp:r.grp||null, position:r.position??0 }));
+}
+
+// Garantiza que el caso tenga puntos sembrados desde el catálogo
+async function ensurePoints(caseId){
+  const { data: pts, error: e0 } = await supabaseClient.from('inspection_points')
+    .select('id').eq('case_id', caseId).limit(1);
+  if (e0){ showError('Error validando puntos: '+e0.message); return; }
+  if (pts && pts.length > 0) return; // ya hay puntos
+
+  const catalog = await loadChecklist();
+  if (!catalog.length){
+    showError('Tu catálogo de inspección (inspection_catalog) está vacío. Sube/siembra los puntos primero.');
+    return;
+  }
+  const rows = catalog.map(i=>({ case_id: caseId, point_key: i.key, point_label: i.label }));
+  const { error: eIns } = await supabaseClient.from('inspection_points').insert(rows);
+  if (eIns){ showError('No se pudieron sembrar puntos: '+eIns.message); }
 }
 
 // === Case helpers ===
@@ -26,20 +54,18 @@ async function getOrCreateCase(plate){
   plate = normalizePlate(plate);
   let { data: existing, error: e1 } = await supabaseClient.from('inspection_case')
     .select('*').eq('plate',plate).eq('status','open').maybeSingle();
-  if (e1) throw e1;
-  if (existing) return existing;
+  if (e1){ showError('Error buscando caso: '+e1.message); throw e1; }
+  if (existing){
+    await ensurePoints(existing.id);
+    return existing;
+  }
 
   const now = new Date().toISOString();
   const { data: created, error: e2 } = await supabaseClient.from('inspection_case')
     .insert({ plate, status:'open', salida_at: now }).select('*').single();
-  if (e2) throw e2;
+  if (e2){ showError('Error creando caso: '+e2.message); throw e2; }
 
-  const catalog = await loadChecklist();
-  if (catalog.length){
-    const rows = catalog.map(i=>({ case_id: created.id, point_key: i.key, point_label: i.label }));
-    const { error: e3 } = await supabaseClient.from('inspection_points').insert(rows);
-    if (e3) console.warn('Sembrar puntos: ', e3.message);
-  }
+  await ensurePoints(created.id);
   return created;
 }
 
@@ -47,23 +73,30 @@ async function findCaseByPlate(plate){
   plate = normalizePlate(plate);
   const { data, error } = await supabaseClient.from('inspection_case')
     .select('*').eq('plate',plate).order('created_at',{ascending:false}).limit(1);
-  if (error) throw error; return data?.[0]||null;
+  if (error){ showError('Error buscando por placa: '+error.message); throw error; }
+  const c = data?.[0]||null;
+  if (c) await ensurePoints(c.id);
+  return c;
 }
 
 async function getClosedCasesByPlate(plate){
   plate = normalizePlate(plate);
   const { data, error } = await supabaseClient.from('inspection_case')
     .select('*').eq('plate',plate).eq('status','closed').order('created_at',{ascending:false});
-  if (error) throw error; return data||[];
+  if (error){ showError('Error leyendo cerradas: '+error.message); throw error; }
+  return data||[];
 }
 
 async function getPoints(caseId){
+  await ensurePoints(caseId);
   const { data, error } = await supabaseClient.from('inspection_points')
     .select('*').eq('case_id', caseId);
-  if (error) throw error; return data||[];
+  if (error){ showError('Error leyendo puntos: '+error.message); throw error; }
+  return data||[];
 }
 
 async function getCaseBundleById(caseId){
+  await ensurePoints(caseId);
   const [{ data: cases }, { data: points }, { data: fotosSalida }, { data: fotosEntrada }] = await Promise.all([
     supabaseClient.from('inspection_case').select('*').eq('id', caseId).limit(1),
     supabaseClient.from('inspection_points').select('*').eq('case_id', caseId),
@@ -101,12 +134,12 @@ async function saveSalida(caseId, byName){
   for (const u of updates){
     const { error } = await supabaseClient.from('inspection_points')
       .update({ salida_value:u.salida_value }).eq('case_id',caseId).eq('point_key',u.point_key);
-    if (error) throw error;
+    if (error){ showError('No se pudo actualizar un punto: '+error.message); throw error; }
   }
   const now=new Date().toISOString();
   const { error:errCase } = await supabaseClient.from('inspection_case')
     .update({ salida_at:now, salida_by: by||null }).eq('id',caseId);
-  if (errCase) throw errCase;
+  if (errCase){ showError('No se pudo actualizar el caso: '+errCase.message); throw errCase; }
   alert('Inspección de salida guardada.');
 }
 async function saveEntrada(caseId, byName, autoClose=true){
@@ -117,16 +150,16 @@ async function saveEntrada(caseId, byName, autoClose=true){
   for (const u of updates){
     const { error } = await supabaseClient.from('inspection_points')
       .update({ entrada_value:u.entrada_value }).eq('case_id',caseId).eq('point_key',u.point_key);
-    if (error) throw error;
+    if (error){ showError('No se pudo actualizar un punto: '+error.message); throw error; }
   }
   const now=new Date().toISOString();
   const { error:errCase } = await supabaseClient.from('inspection_case')
     .update({ entrada_at:now, entrada_by: by||null }).eq('id',caseId);
-  if (errCase) throw errCase;
+  if (errCase){ showError('No se pudo actualizar el caso: '+errCase.message); throw errCase; }
   if (autoClose){
     const { error:errClose } = await supabaseClient.from('inspection_case')
       .update({ status:'closed' }).eq('id',caseId);
-    if (errClose) throw errClose;
+    if (errClose){ showError('No se pudo cerrar el caso: '+errClose.message); throw errClose; }
     alert('Entrada guardada y caso cerrado.');
   } else {
     alert('Inspección de entrada guardada.');
@@ -135,7 +168,7 @@ async function saveEntrada(caseId, byName, autoClose=true){
 async function closeCase(caseId){
   const { error } = await supabaseClient.from('inspection_case')
     .update({ status:'closed' }).eq('id',caseId);
-  if (error){ alert(error.message); return; }
+  if (error){ showError('No se pudo cerrar el caso: '+error.message); return; }
   alert('Caso cerrado y almacenado.');
 }
 
@@ -143,18 +176,18 @@ async function closeCase(caseId){
 async function uploadPhoto(caseId, phase, file){
   const name=`${caseId}/${phase}/${Date.now()}_${file.name}`;
   const { error } = await supabaseClient.storage.from(STORAGE_BUCKET).upload(name, file, { upsert:false });
-  if (error) throw error;
+  if (error){ showError('No se pudo subir una foto: '+error.message); throw error; }
   const { data:pub } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(name);
   const url=pub.publicUrl;
   const ins = await supabaseClient.from('inspection_photos')
     .insert({ case_id:caseId, phase, url, uploaded_by:null });
-  if (ins.error) throw ins.error;
+  if (ins.error){ showError('No se pudo registrar una foto: '+ins.error.message); throw ins.error; }
   return url;
 }
 async function listPhotos(caseId, phase){
   const { data, error } = await supabaseClient.from('inspection_photos')
     .select('*').eq('case_id',caseId).eq('phase',phase).order('created_at',{ascending:false});
-  if (error) throw error;
+  if (error){ showError('No se pudieron listar fotos: '+error.message); throw error; }
   return data||[];
 }
 function renderPhotos(containerId, items){
@@ -162,7 +195,7 @@ function renderPhotos(containerId, items){
   el.innerHTML=(items||[]).map(i=>`<a href="${i.url}" target="_blank"><img src="${i.url}" alt="foto"/></a>`).join('');
 }
 
-// Exports (mantener API usada por tus páginas)
+// Exports
 window.normalizePlate=normalizePlate;
 window.initSupabase=initSupabase;
 window.getOrCreateCase=getOrCreateCase;
