@@ -1,0 +1,76 @@
+
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Scan360 | Detalle de Inspección</title>
+<link rel="stylesheet" href="style-sutra.css"/>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script defer src="env.js"></script>
+<script defer src="app.js"></script>
+<style>
+  .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:8px 0 0 0}
+  .meta-item{font-size:14px;color:#475569}
+  .meta-item b{color:#1f2937}
+</style>
+<style>
+  @media print {
+    .nav, .actions { display:none !important; }
+    body { background:#fff; }
+    .card { box-shadow:none; border:1px solid #ddd; }
+  }
+</style>
+</head><body>
+<div class="nav"><div class="nav-inner">
+  <div class="logo">Scan360</div>
+  <div class="tabs"><div class="tab active">Detalle</div></div>
+</div></div>
+
+<div class="container">
+  <div class="card">
+    <h3>Detalle de inspección</h3>
+    <div id="head"></div>
+    <div class="section">Checklist (Salida vs Entrada)</div>
+    <div id="tabla"></div>
+  </div>
+  <div class="card">
+    <h3>Fotos de salida</h3>
+    <div class="gallery" id="gal_salida"></div>
+  </div>
+  <div class="card">
+    <h3>Fotos de entrada</h3>
+    <div class="gallery" id="gal_entrada"></div>
+  </div>
+  <div class="actions"><a href="index.html"><button class="btn outline">Inicio</button></a> <button class="btn primary" onclick="window.print()">Imprimir</button></div>
+</div>
+
+<script>
+  window.addEventListener('DOMContentLoaded', async ()=>{
+    initSupabase();
+    const params=new URLSearchParams(location.search);
+    const caseId=params.get('case');
+    let bundle=null;
+    if(caseId){ bundle=await getCaseBundleById(caseId); }
+    else {
+      const plate=(sessionStorage.getItem('plate')||'').toUpperCase();
+      const c=await findCaseByPlate(plate);
+      bundle=await getCaseBundleById(c.id);
+    }
+    const c=bundle.case;
+    if(!c){ alert('Caso no encontrado'); return; }
+    const salidaAt = c.salida_at || '-';
+    const entradaAt = c.entrada_at || '-';
+    const salidaBy = c.salida_by || '-';
+    const entradaBy = c.entrada_by || '-';
+    document.getElementById('head').innerHTML =
+      `<p><strong>Placa:</strong> ${c.plate} &nbsp; <span class="badge ${c.status==='closed'?'status-closed':'status-open'}">${c.status}</span></p>
+       <div class="meta-grid">
+         <div class="meta-item"><b>Salida:</b> ${salidaAt}</div>
+         <div class="meta-item"><b>Entregado por:</b> ${salidaBy}</div>
+         <div class="meta-item"><b>Entrada:</b> ${entradaAt}</div>
+         <div class="meta-item"><b>Recibido por:</b> ${entradaBy}</div>
+       </div>`;
+    document.getElementById('tabla').innerHTML = buildClosedTable(bundle.points);
+    renderPhotos('gal_salida', bundle.fotosSalida);
+    renderPhotos('gal_entrada', bundle.fotosEntrada);
+  });
+</script>
+</body></html>

@@ -1,0 +1,92 @@
+
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Scan360 | Inspección de Entrada</title>
+<link rel="stylesheet" href="style-sutra.css"/>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script defer src="env.js"></script>
+<script defer src="app.js"></script>
+</head><body>
+<div class="nav"><div class="nav-inner">
+  <div class="logo">Scan360</div>
+  <div class="tabs"><div class="tab active">Entrada</div></div>
+</div></div>
+
+<div class="container">
+  <!-- Encabezado -->
+  <div class="card">
+    <h3>Entrada <span class="badge status-open" id="status"></span></h3>
+    <p><strong>Placa:</strong> <span id="placa"></span></p>
+  </div>
+
+  <!-- Referencia de fotos salida -->
+  <div class="card">
+    <h3>Fotos de salida (referencia)</h3>
+    <div class="gallery" id="gal_salida_ref"></div>
+  </div>
+
+  <!-- Checklist -->
+  <div class="card">
+    <h3>Checklist</h3>
+    <div id="form"></div>
+  </div>
+
+  <!-- Final (recibido por, fotos + botones al final) -->
+  <div class="card">
+    <h3>Finalizar</h3>
+    <label>Recibido por / firmó:
+      <input id="entrada_by" type="text" placeholder="Nombre del cliente o agente"/>
+    </label>
+    <div class="actions">
+      <label>Fotos de entrada:
+        <input id="foto_entrada" type="file" accept="image/*" multiple/>
+      </label>
+      <button class="btn primary" id="btnSave">Guardar entrada (cierra caso)</button>
+      <a href="index.html"><button class="btn outline">Inicio</button></a>
+    </div>
+    <div class="gallery" id="gal_entrada"></div>
+  </div>
+</div>
+
+<script>
+  let currentCase=null;
+  window.addEventListener('DOMContentLoaded', async ()=>{
+    initSupabase();
+    const plate=(sessionStorage.getItem('plate')||'').toUpperCase();
+    if(!plate) return location.href='index.html';
+    document.getElementById('placa').textContent=plate;
+
+    currentCase = await findCaseByPlate(plate);
+    if(!currentCase){
+      alert('No hay caso para esta tablilla. Crea primero una inspección de salida.');
+      return location.href='index.html';
+    }
+    document.getElementById('status').textContent=currentCase.status;
+
+    const fotosSalida = await listPhotos(currentCase.id, 'salida');
+    renderPhotos('gal_salida_ref', fotosSalida);
+
+    const points = await getPoints(currentCase.id);
+    document.getElementById('form').innerHTML = buildEntradaForm(points);
+
+    const fotosEntrada = await listPhotos(currentCase.id, 'entrada');
+    renderPhotos('gal_entrada', fotosEntrada);
+
+    document.getElementById('btnSave').onclick = async ()=>{
+      await saveEntrada(currentCase.id, document.getElementById('entrada_by').value, true);
+      document.getElementById('status').textContent='closed';
+      document.getElementById('status').className='badge status-closed';
+    };
+
+    const input=document.getElementById('foto_entrada');
+    input.addEventListener('change', async (e)=>{
+      for(const f of e.target.files){
+        try{ await uploadPhoto(currentCase.id, 'entrada', f);}catch(err){ alert(err.message); }
+      }
+      const fotos2=await listPhotos(currentCase.id,'entrada');
+      renderPhotos('gal_entrada', fotos2);
+      input.value='';
+    });
+  });
+</script>
+</body></html>

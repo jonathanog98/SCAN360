@@ -1,0 +1,58 @@
+[
+  {
+    "key": "estado_carroceria",
+    "label": "Carrocería (golpes/abolladuras)"
+  },
+  {
+    "key": "parabrisas",
+    "label": "Parabrisas"
+  },
+  {
+    "key": "luces_frontales",
+    "label": "Luces frontales"
+  },
+  {
+    "key": "luces_traseras",
+    "label": "Luces traseras"
+  },
+  {
+    "key": "guiños",
+    "label": "Direccionales / Guiños"
+  },
+  {
+    "key": "neumaticos",
+    "label": "Neumáticos"
+  },
+  {
+    "key": "tapones",
+    "label": "Tapones / Rines"
+  },
+  {
+    "key": "combustible",
+    "label": "Nivel de combustible"
+  },
+  {
+    "key": "accesorios",
+    "label": "Accesorios (cable carga, inflador, triángulos)"
+  },
+  {
+    "key": "interior_general",
+    "label": "Interior general (limpieza, olores)"
+  },
+  {
+    "key": "asientos",
+    "label": "Asientos / Tapicería"
+  },
+  {
+    "key": "pantalla",
+    "label": "Pantalla central / iDrive"
+  },
+  {
+    "key": "documentos",
+    "label": "Documentos en guantera"
+  },
+  {
+    "key": "llave",
+    "label": "Llave / mando"
+  }
+]

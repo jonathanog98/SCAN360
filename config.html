@@ -1,0 +1,121 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Configurar Checklist</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script defer src="env.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Configurar checklist</h1>
+      <a href="index.html"><button>Volver</button></a>
+    </div>
+    <p>Pega **tu lista exacta**. Formatos aceptados (uno por línea):</p>
+    <ul>
+      <li><code>Exterior: Parabrisas</code></li>
+      <li><code>Exterior: Luces frontales</code></li>
+      <li><code>Interior: Tapicería</code></li>
+      <li>o solo el nombre del punto (sin grupo)</li>
+    </ul>
+    <textarea id="input" rows="14" placeholder="Ejemplo:
+Exterior: Carrocería (golpes/abolladuras)
+Exterior: Parabrisas
+Exterior: Luces frontales
+Exterior: Luces traseras
+Interior: Tapicería
+Documentos: Licencia del vehículo
+Llave / control"></textarea>
+
+    <div class="actions">
+      <button class="primary" id="btnPreview">Previsualizar</button>
+      <button id="btnGuardar">Guardar catálogo</button>
+      <button id="btnBorrar">Borrar catálogo</button>
+    </div>
+
+    <div id="preview"></div>
+  </div>
+
+  <script>
+    async function parseLines(text) {
+      const lines = text.split(/\\r?\\n/).map(l => l.trim()).filter(Boolean);
+      const rows = [];
+      let pos = 0;
+      for (const line of lines) {
+        let grp = null, label = line;
+        const parts = line.split(':');
+        if (parts.length >= 2) {
+          grp = parts[0].trim();
+          label = parts.slice(1).join(':').trim();
+        }
+        const point_key = slugify(label);
+        rows.push({ grp, point_label: label, point_key, position: pos++ });
+      }
+      return rows;
+    }
+
+    async function loadCatalog() {
+      const { data, error } = await supabaseClient
+        .from('inspection_catalog')
+        .select('*')
+        .order('grp', { ascending: true, nullsFirst: true })
+        .order('position', { ascending: true });
+      if (error) { alert(error.message); return []; }
+      return data || [];
+    }
+
+    function renderPreview(rows) {
+      let html = '<h3>Vista previa</h3>';
+      let current = '__NONE__';
+      for (const r of rows) {
+        if ((r.grp || '__NONE__') !== current) {
+          current = (r.grp || '__NONE__');
+          if (r.grp) html += `<div class="section">${r.grp}</div>`;
+        }
+        html += `<div class="row"><div class="label">${r.point_label}</div><div class="controls"><span class="badge">${r.point_key}</span></div></div>`;
+      }
+      document.getElementById('preview').innerHTML = html;
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      initSupabase();
+      const existing = await loadCatalog();
+      if (existing.length) {
+        const text = existing.map(r => (r.grp? `${r.grp}: `:'') + r.point_label).join('\\n');
+        document.getElementById('input').value = text;
+        renderPreview(existing);
+      }
+
+      document.getElementById('btnPreview').onclick = async () => {
+        const rows = await parseLines(document.getElementById('input').value);
+        renderPreview(rows);
+      };
+
+      document.getElementById('btnGuardar').onclick = async () => {
+        const rows = await parseLines(document.getElementById('input').value);
+        if (!rows.length) return alert('No hay filas.');
+        // wipe & insert
+        const del = await supabaseClient.from('inspection_catalog').delete().neq('point_key','__none__');
+        if (del.error) { alert(del.error.message); return; }
+        const { error } = await supabaseClient.from('inspection_catalog').insert(rows);
+        if (error) { alert(error.message); return; }
+        alert('Catálogo guardado. Ahora tus inspecciones usarán tu checklist exacto.');
+      };
+
+      document.getElementById('btnBorrar').onclick = async () => {
+        if (!confirm('¿Borrar todo el catálogo?')) return;
+        const del = await supabaseClient.from('inspection_catalog').delete().neq('point_key','__none__');
+        if (del.error) { alert(del.error.message); return; }
+        document.getElementById('input').value='';
+        document.getElementById('preview').innerHTML='';
+        alert('Catálogo borrado.');
+      };
+    });
+  </script>
+</body>
+</html>

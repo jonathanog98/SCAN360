@@ -1,0 +1,37 @@
+
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Scan360 | Inspecciones</title>
+<link rel="stylesheet" href="style-sutra.css"/>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script defer src="env.js"></script>
+<script defer src="app.js"></script>
+</head><body>
+<div class="nav"><div class="nav-inner">
+  <div class="logo">Scan360</div>
+  <div class="tabs"><div class="tab active">Inicio</div></div>
+</div></div>
+<div class="container hero"><div class="panel">
+  <h2 style="margin:0 0 8px 0">Gestionar inspecciones</h2>
+  <div class="input-row">
+    <input id="plate" type="text" placeholder="Ej: JBR-123"/>
+    <button id="btnSalida" class="btn primary">Iniciar / continuar SALIDA</button>
+    <button id="btnEntrada" class="btn outline">Ir a ENTRADA</button>
+    <button id="btnVerCerradas" class="btn outline">Ver cerradas</button>
+  </div>
+</div></div>
+<script>
+  window.addEventListener('DOMContentLoaded', ()=>{
+    initSupabase();
+    const plateEl = document.getElementById('plate');
+    function need(){
+      const v=(plateEl.value||'').trim();
+      if(!v){alert('Escribe la tablilla.'); return null;}
+      sessionStorage.setItem('plate', v.toUpperCase()); return v;
+    }
+    document.getElementById('btnSalida').onclick = ()=>{ if(!need())return; location.href='salida.html'; };
+    document.getElementById('btnEntrada').onclick = ()=>{ if(!need())return; location.href='entrada.html'; };
+    document.getElementById('btnVerCerradas').onclick = ()=>{ if(!need())return; location.href='ver_cerradas.html'; };
+  });
+</script>
+</body></html>
