@@ -15,11 +15,16 @@ function showError(msg){
 let supabaseClient = null;
 function initSupabase(){
   if(!supabaseClient){
-    if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined'){
-      showError('No se encontró env.js (SUPABASE_URL / SUPABASE_ANON_KEY). Verifica el deploy.');
+    // IMPORTANT: read from window.* because env.js defines window.SUPABASE_URL, etc.
+    const URL = (window && window.SUPABASE_URL) || null;
+    const KEY = (window && window.SUPABASE_ANON_KEY) || null;
+    if (!URL || !KEY){
+      showError('No se encontró env.js o variables (window.SUPABASE_URL / window.SUPABASE_ANON_KEY).');
       throw new Error('Faltan variables de entorno');
     }
-    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supabaseClient = supabase.createClient(URL, KEY);
+    // Expose for debugging
+    window.__sb = supabaseClient;
   }
   return supabaseClient;
 }
@@ -174,10 +179,12 @@ async function closeCase(caseId){
 
 // === Photos ===
 async function uploadPhoto(caseId, phase, file){
+  const bucket = (window && window.STORAGE_BUCKET) || null;
+  if (!bucket){ showError('Falta window.STORAGE_BUCKET en env.js'); throw new Error('No bucket'); }
   const name=`${caseId}/${phase}/${Date.now()}_${file.name}`;
-  const { error } = await supabaseClient.storage.from(STORAGE_BUCKET).upload(name, file, { upsert:false });
+  const { error } = await supabaseClient.storage.from(bucket).upload(name, file, { upsert:false });
   if (error){ showError('No se pudo subir una foto: '+error.message); throw error; }
-  const { data:pub } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(name);
+  const { data:pub } = supabaseClient.storage.from(bucket).getPublicUrl(name);
   const url=pub.publicUrl;
   const ins = await supabaseClient.from('inspection_photos')
     .insert({ case_id:caseId, phase, url, uploaded_by:null });
