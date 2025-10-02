@@ -15,7 +15,6 @@ function showError(msg){
 let supabaseClient = null;
 function initSupabase(){
   if(!supabaseClient){
-    // IMPORTANT: read from window.* because env.js defines window.SUPABASE_URL, etc.
     const URL = (window && window.SUPABASE_URL) || null;
     const KEY = (window && window.SUPABASE_ANON_KEY) || null;
     if (!URL || !KEY){
@@ -23,7 +22,6 @@ function initSupabase(){
       throw new Error('Faltan variables de entorno');
     }
     supabaseClient = supabase.createClient(URL, KEY);
-    // Expose for debugging
     window.__sb = supabaseClient;
   }
   return supabaseClient;
@@ -37,17 +35,14 @@ async function loadChecklist(){
   return (data||[]).map(r=>({ key:r.point_key, label:r.point_label, grp:r.grp||null, position:r.position??0 }));
 }
 
-// Garantiza que el caso tenga puntos sembrados desde el catálogo
 async function ensurePoints(caseId){
   const { data: pts, error: e0 } = await supabaseClient.from('inspection_points')
     .select('id').eq('case_id', caseId).limit(1);
   if (e0){ showError('Error validando puntos: '+e0.message); return; }
-  if (pts && pts.length > 0) return; // ya hay puntos
-
+  if (pts && pts.length > 0) return;
   const catalog = await loadChecklist();
   if (!catalog.length){
-    showError('Tu catálogo de inspección (inspection_catalog) está vacío. Sube/siembra los puntos primero.');
-    return;
+    showError('Tu catálogo de inspección está vacío.'); return;
   }
   const rows = catalog.map(i=>({ case_id: caseId, point_key: i.key, point_label: i.label }));
   const { error: eIns } = await supabaseClient.from('inspection_points').insert(rows);
@@ -61,15 +56,12 @@ async function getOrCreateCase(plate){
     .select('*').eq('plate',plate).eq('status','open').maybeSingle();
   if (e1){ showError('Error buscando caso: '+e1.message); throw e1; }
   if (existing){
-    await ensurePoints(existing.id);
-    return existing;
+    await ensurePoints(existing.id); return existing;
   }
-
   const now = new Date().toISOString();
   const { data: created, error: e2 } = await supabaseClient.from('inspection_case')
     .insert({ plate, status:'open', salida_at: now }).select('*').single();
   if (e2){ showError('Error creando caso: '+e2.message); throw e2; }
-
   await ensurePoints(created.id);
   return created;
 }
@@ -114,12 +106,12 @@ async function getCaseBundleById(caseId){
 // === UI builders ===
 function radio(name,value,checked){ return `<label><input type="radio" name="${name}" value="${value}" ${checked?'checked':''}> ${value}</label>`; }
 function buildSalidaForm(points){
-  if (!points?.length) return `<p><em>No hay puntos todavía para esta tablilla.</em></p>`;
+  if (!points?.length) return `<p><em>No hay puntos todavía.</em></p>`;
   points=[...points].sort((a,b)=>a.point_label.localeCompare(b.point_label));
   return points.map(p=>{ const name=`salida__${p.point_key}`; return `<div class="row"><div class="label">${p.point_label}</div><div class="controls">${radio(name,'Sí',false)}${radio(name,'No',false)}${radio(name,'No Aplica',false)}</div></div>`; }).join('');
 }
 function buildEntradaForm(points){
-  if (!points?.length) return `<p><em>No hay puntos para esta tablilla.</em></p>`;
+  if (!points?.length) return `<p><em>No hay puntos.</em></p>`;
   points=[...points].sort((a,b)=>a.point_label.localeCompare(b.point_label));
   return points.map(p=>{ const name=`entrada__${p.point_key}`; return `<div class="row two-col"><div class="left"><div class="label">${p.point_label}</div><div class="prev"><strong>Salida:</strong> ${p.salida_value||'-'}</div></div><div class="right">${radio(name,'Sí',false)}${radio(name,'No',false)}${radio(name,'No Aplica',false)}</div></div>`; }).join('');
 }
@@ -170,12 +162,6 @@ async function saveEntrada(caseId, byName, autoClose=true){
     alert('Inspección de entrada guardada.');
   }
 }
-async function closeCase(caseId){
-  const { error } = await supabaseClient.from('inspection_case')
-    .update({ status:'closed' }).eq('id',caseId);
-  if (error){ showError('No se pudo cerrar el caso: '+error.message); return; }
-  alert('Caso cerrado y almacenado.');
-}
 
 // === Photos ===
 async function uploadPhoto(caseId, phase, file){
@@ -202,6 +188,16 @@ function renderPhotos(containerId, items){
   el.innerHTML=(items||[]).map(i=>`<a href="${i.url}" target="_blank"><img src="${i.url}" alt="foto"/></a>`).join('');
 }
 
+// === Input Sanitization on Frontend ===
+document.addEventListener("DOMContentLoaded", () => {
+  const plateInput = document.getElementById("plateInput");
+  if (plateInput) {
+    plateInput.addEventListener("input", (e) => {
+      e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    });
+  }
+});
+
 // Exports
 window.normalizePlate=normalizePlate;
 window.initSupabase=initSupabase;
@@ -215,7 +211,6 @@ window.buildEntradaForm=buildEntradaForm;
 window.buildClosedTable=buildClosedTable;
 window.saveSalida=saveSalida;
 window.saveEntrada=saveEntrada;
-window.closeCase=closeCase;
 window.uploadPhoto=uploadPhoto;
 window.listPhotos=listPhotos;
 window.renderPhotos=renderPhotos;
